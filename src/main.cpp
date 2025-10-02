@@ -207,7 +207,7 @@ uint8_t packButtons(bool circle, bool triangle, bool square, bool cross, bool L1
 }
 
 void setup() {
-    Serial.begin(115200); // 115200bpsでシリアル通信開始
+    debug_begin(115200);
     PS4.begin("e4:65:b8:7e:07:02");
 
     CAN.setPins(RX_PIN, TX_PIN);
