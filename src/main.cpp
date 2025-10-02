@@ -5,7 +5,7 @@
 
 #include "Debug.hpp"
 
-bool g_debug_enabled = true;
+const bool G_DEBUG_ENABLED = true;
 
 const int8_t SLAVE_1 = 0x001; // スレーブ1のID（メインデータ送信用）
 const int8_t SLAVE_2 = 0x002; // スレーブ2のID（予備）
