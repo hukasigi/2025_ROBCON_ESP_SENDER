@@ -6,12 +6,12 @@
 extern bool g_debug_enabled;
 
 template<typename T>
-void DebugPrint(T debug_msg) {
+void debug_print(T debug_msg) {
     if(g_debug_enabled) Serial.print(debug_msg);
 }
 
 template<typename T>
-void DebugPrintln(T debug_msg) {
+void debug_println(T debug_msg) {
     if(g_debug_enabled) Serial.println(debug_msg);
 }
 
