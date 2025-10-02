@@ -22,7 +22,10 @@ const int16_t MAX_SENDNUM = 16384;  // CAN送信データの最大値（16bit符
 const uint8_t DEADZONE_STICK = 40; // スティックのデッドゾーン（テスト用に縮小）
 const uint8_t DEADZONE_R2_L2 = 20; // R2/L2トリガーのデッドゾーン（テスト用に縮小）
 
+const int SERIAL_BAUDRATE = 9600;
+const int CAN_BAUDRATE = 100E3;
 
+const char* PS4_BT_ADDRESS = "e4:65:b8:7e:07:02";
 
 int16_t mapping_data(double x, double in_min, double in_max, int16_t out_min, int16_t out_max) {
     double proportion = (x - in_min) / (in_max - in_min);
@@ -207,8 +210,8 @@ uint8_t packButtons(bool circle, bool triangle, bool square, bool cross, bool L1
 }
 
 void setup() {
-    debug_begin(115200);
-    PS4.begin("e4:65:b8:7e:07:02");
+    debug_begin(SERIAL_BAUDRATE);
+    PS4.begin(PS4_BT_ADDRESS);
 
     CAN.setPins(RX_PIN, TX_PIN);
 
