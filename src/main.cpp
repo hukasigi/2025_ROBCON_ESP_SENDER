@@ -26,7 +26,7 @@ const uint8_t DEADZONE_R2_L2 = 20; // R2/L2トリガーのデッドゾーン（�
 const int SERIAL_BAUDRATE = 9600;
 const int CAN_BAUDRATE = 100E3;
 
-const char* PS4_BT_ADDRESS = "e4:65:b8:7e:07:02";
+const char* PS4_BT_ADDRESS = "e4:65:b8:7e:0f:f2";
 
 int16_t mapping_data(double x, double in_min, double in_max, int16_t out_min, int16_t out_max) {
     double proportion = (x - in_min) / (in_max - in_min);
@@ -204,6 +204,9 @@ void setup() {
     debug_println("Ready"); // システム準備完了の通知
 }
 
+CANSendPacket to_SLAVE_1 = CANSendPacket(SLAVE_1);
+CANSendPacket to_SLAVE_2 = CANSendPacket(SLAVE_2);
+
 void loop() {
     // 1. コントローラー接続状態の確認と安全処理
     if (!PS4.isConnected()) {
@@ -223,30 +226,17 @@ void loop() {
     uint8_t btns_1 =
         packButtons(PS4.Circle(), PS4.Triangle(), PS4.Square(), PS4.Cross(), PS4.L1(), PS4.R1(), PS4.Left(), PS4.Right());
 
-    CAN.beginPacket(SLAVE_1);
+    to_SLAVE_1.SetByte(0, btns_1);
+    to_SLAVE_1.SetByte(1, r_x);
+    to_SLAVE_1.SetByte(2, r_y);
+    to_SLAVE_1.Send();
 
-    CAN.write(btns_1); // Byte0: 8ボタン状態（ビットパック）
-    CAN.write(r_x);    // Byte1: 右スティックX軸
-    CAN.write(r_y);    // Byte2: 右スティックY軸
-    CAN.write(1);      // Byte3: 予備データ
-    CAN.write(1);      // Byte4: 予備データ
-    CAN.write(1);      // Byte5: 予備データ
-    CAN.write(1);      // Byte6: 予備データ
-    CAN.write(1);      // Byte7: 予備データ
+    to_SLAVE_2.SetByte(0, btns_1);
+    to_SLAVE_2.SetByte(1, r_x);
+    to_SLAVE_2.SetByte(2, r_y);
+    to_SLAVE_2.Send();
 
-    CAN.endPacket(); // パケット送信完了
     CAN.beginPacket(SLAVE_2);
-
-    CAN.write(btns_1); // Byte0: 8ボタン状態（ビットパック）
-    CAN.write(r_x);    // Byte1: 右スティックX軸
-    CAN.write(r_y);    // Byte2: 右スティックY軸
-    CAN.write(1);      // Byte3: 予備データ
-    CAN.write(1);      // Byte4: 予備データ
-    CAN.write(1);      // Byte5: 予備データ
-    CAN.write(1);      // Byte6: 予備データ
-    CAN.write(1);      // Byte7: 予備データ
-
-    CAN.endPacket(); // パケット送信完了
 
     if (R2_val > 0) {
         TestOmni.R_Turn(R2_val, 100.0); // 100%を最大回転速度として設定
