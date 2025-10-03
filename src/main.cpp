@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "Debug.hpp"
+#include "CAN/SendPacket.hpp"
 
 const bool G_DEBUG_ENABLED = true;
 
@@ -25,7 +26,7 @@ const uint8_t DEADZONE_R2_L2 = 20; // R2/L2トリガーのデッドゾーン（�
 const int SERIAL_BAUDRATE = 9600;
 const int CAN_BAUDRATE = 100E3;
 
-const char* PS4_BT_ADDRESS = "e4:65:b8:7e:07:02";
+const char* PS4_BT_ADDRESS = "e4:65:b8:7e:0f:f2";
 
 int16_t mapping_data(double x, double in_min, double in_max, int16_t out_min, int16_t out_max) {
     double proportion = (x - in_min) / (in_max - in_min);
@@ -40,30 +41,6 @@ std::pair<int8_t, int8_t> split_data(int16_t formatted_data) {
 }
 
 
-
-class Packet {
-    private:
-        int id;
-        int8_t buf[8];
-    public:
-        Packet(int set_id) {
-            id = set_id;
-            Init();
-        }
-        void Init() { // データバッファの初期化。インスタンス作成時以外も呼び出し可能とするため別関数に。
-            for (int8_t& data : buf)
-                data = 0x00;
-        }
-        int8_t& At(int num) { return buf[num]; }
-        int Id() { return id; }
-        void Send() {
-            CAN.beginPacket(id);    // パケット送信開始
-            for (int8_t data : buf) // 8バイト全てを送信
-                CAN.write(data);
-            CAN.endPacket(); // パケット送信完了
-            delay(10);       // 安定性のための待機時間
-        }
-};
 
 class RoboMasMotor {
     private:
@@ -88,7 +65,7 @@ class Omnix4 {
         RoboMasMotor BackLeftOmni   = RoboMasMotor(1); // 後左モーター(ID:1)
         RoboMasMotor BackRightOmni  = RoboMasMotor(2); // 後右モーター(ID:2)
         RoboMasMotor FrontRightOmni = RoboMasMotor(4); // 前右モーター(ID:4)
-        Packet TxBuf = Packet(0x200);
+        CANSendPacket RoboMasControlPacket = CANSendPacket(0x200);
 
         const double MAX_CONTROLLER_INPUT = 127.0;
 
@@ -96,14 +73,14 @@ class Omnix4 {
             auto byte_data = motor.SendBufByte(speed_percentage);
             auto position  = motor.ID_DATE();
 
-            TxBuf.At(position.first)  = byte_data.first;  // 上位バイト
-            TxBuf.At(position.second) = byte_data.second; // 下位バイト
+            RoboMasControlPacket.SetByte(position.first, byte_data.first);
+            RoboMasControlPacket.SetByte(position.second, byte_data.second);
         }
 
     public:
         Omnix4() {}
 
-        void SendPacket() { TxBuf.Send(); }
+        void SendPacket() { RoboMasControlPacket.Send(); }
         void Shift(int x, int y, double max_speed_percentage) {
             double distance = std::sqrt(x * x + y * y); // ピタゴラスの定理でベクトル長を算出
 
@@ -227,6 +204,9 @@ void setup() {
     debug_println("Ready"); // システム準備完了の通知
 }
 
+CANSendPacket to_SLAVE_1 = CANSendPacket(SLAVE_1);
+CANSendPacket to_SLAVE_2 = CANSendPacket(SLAVE_2);
+
 void loop() {
     // 1. コントローラー接続状態の確認と安全処理
     if (!PS4.isConnected()) {
@@ -246,30 +226,17 @@ void loop() {
     uint8_t btns_1 =
         packButtons(PS4.Circle(), PS4.Triangle(), PS4.Square(), PS4.Cross(), PS4.L1(), PS4.R1(), PS4.Left(), PS4.Right());
 
-    CAN.beginPacket(SLAVE_1);
+    to_SLAVE_1.SetByte(0, btns_1);
+    to_SLAVE_1.SetByte(1, r_x);
+    to_SLAVE_1.SetByte(2, r_y);
+    to_SLAVE_1.Send();
 
-    CAN.write(btns_1); // Byte0: 8ボタン状態（ビットパック）
-    CAN.write(r_x);    // Byte1: 右スティックX軸
-    CAN.write(r_y);    // Byte2: 右スティックY軸
-    CAN.write(1);      // Byte3: 予備データ
-    CAN.write(1);      // Byte4: 予備データ
-    CAN.write(1);      // Byte5: 予備データ
-    CAN.write(1);      // Byte6: 予備データ
-    CAN.write(1);      // Byte7: 予備データ
+    to_SLAVE_2.SetByte(0, btns_1);
+    to_SLAVE_2.SetByte(1, r_x);
+    to_SLAVE_2.SetByte(2, r_y);
+    to_SLAVE_2.Send();
 
-    CAN.endPacket(); // パケット送信完了
     CAN.beginPacket(SLAVE_2);
-
-    CAN.write(btns_1); // Byte0: 8ボタン状態（ビットパック）
-    CAN.write(r_x);    // Byte1: 右スティックX軸
-    CAN.write(r_y);    // Byte2: 右スティックY軸
-    CAN.write(1);      // Byte3: 予備データ
-    CAN.write(1);      // Byte4: 予備データ
-    CAN.write(1);      // Byte5: 予備データ
-    CAN.write(1);      // Byte6: 予備データ
-    CAN.write(1);      // Byte7: 予備データ
-
-    CAN.endPacket(); // パケット送信完了
 
     if (R2_val > 0) {
         TestOmni.R_Turn(R2_val, 100.0); // 100%を最大回転速度として設定
