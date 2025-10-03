@@ -3,6 +3,10 @@
 #include <PS4Controller.h>
 #include <cmath>
 
+#include "Debug.hpp"
+
+const bool G_DEBUG_ENABLED = true;
+
 const int8_t SLAVE_1 = 0x001; // スレーブ1のID（メインデータ送信用）
 const int8_t SLAVE_2 = 0x002; // スレーブ2のID（予備）
 const int8_t SLAVE_3 = 0x003; // スレーブ3のID（予備）
@@ -18,7 +22,10 @@ const int16_t MAX_SENDNUM = 16384;  // CAN送信データの最大値（16bit符
 const uint8_t DEADZONE_STICK = 40; // スティックのデッドゾーン（テスト用に縮小）
 const uint8_t DEADZONE_R2_L2 = 20; // R2/L2トリガーのデッドゾーン（テスト用に縮小）
 
+const int SERIAL_BAUDRATE = 9600;
+const int CAN_BAUDRATE = 100E3;
 
+const char* PS4_BT_ADDRESS = "e4:65:b8:7e:07:02";
 
 int16_t mapping_data(double x, double in_min, double in_max, int16_t out_min, int16_t out_max) {
     double proportion = (x - in_min) / (in_max - in_min);
@@ -122,19 +129,19 @@ class Omnix4 {
             double vector13 = std::cos(radian) * max_speed_percentage * magnitude; // 対角ベクトル1-3
             double vector24 = std::sin(radian) * max_speed_percentage * magnitude; // 対角ベクトル2-4
 
-            Serial.print("MOVE Vector13=");
-            Serial.print(vector13);
-            Serial.print("% Vector24=");
-            Serial.print(vector24);
-            Serial.println("%");
-            Serial.print("Motors: FL=");
-            Serial.print(vector13);
-            Serial.print(" BL=");
-            Serial.print(vector24);
-            Serial.print(" BR=");
-            Serial.print(-vector13);
-            Serial.print(" FR=");
-            Serial.println(-vector24);
+            debug_print("MOVE Vector13=");
+            debug_print(vector13);
+            debug_print("% Vector24=");
+            debug_print(vector24);
+            debug_println("%");
+            debug_print("Motors: FL=");
+            debug_print(vector13);
+            debug_print(" BL=");
+            debug_print(vector24);
+            debug_print(" BR=");
+            debug_print(-vector13);
+            debug_print(" FR=");
+            debug_println(-vector24);
 
             MotorSpeedChange(FrontLeftOmni, vector13);   // 前左 = ベクトル1-3成分
             MotorSpeedChange(BackLeftOmni, vector24);    // 後左 = ベクトル2-4成分
@@ -203,13 +210,13 @@ uint8_t packButtons(bool circle, bool triangle, bool square, bool cross, bool L1
 }
 
 void setup() {
-    Serial.begin(115200); // 115200bpsでシリアル通信開始
-    PS4.begin("e4:65:b8:7e:07:02");
+    debug_begin(SERIAL_BAUDRATE);
+    PS4.begin(PS4_BT_ADDRESS);
 
     CAN.setPins(RX_PIN, TX_PIN);
 
     if (!CAN.begin(1000E3)) {
-        Serial.println("CAN Init Failed");
+        debug_println("CAN Init Failed");
         while (1)
             ; // CAN初期化失敗時は無限ループで停止
     }
@@ -217,7 +224,7 @@ void setup() {
     volatile uint32_t* pREG_IER = (volatile uint32_t*)0x3ff6b010;
     *pREG_IER &= ~(uint8_t)0x10;
 
-    Serial.println("Ready"); // システム準備完了の通知
+    debug_println("Ready"); // システム準備完了の通知
 }
 
 void loop() {
@@ -271,7 +278,7 @@ void loop() {
     } else if (L2_val > 0) {
         TestOmni.L_Turn(L2_val, 100.0); // 100%を最大回転速度として設定
         TestOmni.SendPacket();
-        Serial.println("L2"); // モーター制御データをCAN送信
+        debug_println("L2"); // モーター制御データをCAN送信
 
     } else if (PS4.Up()) {
         TestOmni.Front();
@@ -286,30 +293,30 @@ void loop() {
         TestOmni.SendPacket();           // モーター制御データをCAN送信
     }
 
-    Serial.print("LStick: X=");
-    Serial.print(l_x);
-    Serial.print(" Y=");
-    Serial.println(l_y);
-    Serial.print("Triggers: R2=");
-    Serial.print(R2_val);
-    Serial.print(" L2=");
-    Serial.println(L2_val);
-    Serial.print(PS4.R2Value());
+    debug_print("LStick: X=");
+    debug_print(l_x);
+    debug_print(" Y=");
+    debug_println(l_y);
+    debug_print("Triggers: R2=");
+    debug_print(R2_val);
+    debug_print(" L2=");
+    debug_println(L2_val);
+    debug_print(PS4.R2Value());
 
-    Serial.print("RIGHT TURN - Intensity: ");
-    Serial.print((R2_val / 255.0) * 100);
-    Serial.println("%");
-    Serial.print("LEFT TURN - Intensity: ");
-    Serial.print((L2_val / 255.0) * 100);
-    Serial.println("%");
+    debug_print("RIGHT TURN - Intensity: ");
+    debug_print((R2_val / 255.0) * 100);
+    debug_println("%");
+    debug_print("LEFT TURN - Intensity: ");
+    debug_print((L2_val / 255.0) * 100);
+    debug_println("%");
     double distance  = std::sqrt(l_x * l_x + l_y * l_y);
     double magnitude = distance / 127.0;
-    Serial.print("MOVE - Distance: ");
-    Serial.print(distance);
-    Serial.print(" Intensity: ");
-    Serial.print(magnitude * 100);
-    Serial.println("%");
-    Serial.println("---");
+    debug_print("MOVE - Distance: ");
+    debug_print(distance);
+    debug_print(" Intensity: ");
+    debug_print(magnitude * 100);
+    debug_println("%");
+    debug_println("---");
 
     delay(5);
 }
