@@ -73,7 +73,7 @@ class Omnix4 {
             auto byte_data = motor.SendBufByte(speed_percentage);
             auto position  = motor.ID_DATE();
 
-            RoboMasControlPacket.SetByte(position.first, byte_data.second);
+            RoboMasControlPacket.SetByte(position.first, byte_data.first);
             RoboMasControlPacket.SetByte(position.second, byte_data.second);
         }
 
