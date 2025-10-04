@@ -1,0 +1,6 @@
+#ifndef ROBOMASCONTROL_SEEN
+#define ROBOMASCONTROL_SEEN
+
+
+
+#endif
