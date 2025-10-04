@@ -10,10 +10,12 @@ const bool G_DEBUG_ENABLED = true;
 
 const int8_t SLAVE_1 = 0x001; // スレーブ1のID（メインデータ送信用）
 const int8_t SLAVE_2 = 0x002; // スレーブ2のID（予備）
-const int8_t SLAVE_3 = 0x003; // スレーブ3のID（予備）
+// const int8_t SLAVE_3 = 0x003; // スレーブ3のID（予備）
 
 const int TX_PIN = 5; // CAN送信ピン（ESP32のGPIO5）
 const int RX_PIN = 4; // CAN受信ピン（ESP32のGPIO4）
+// const int TX_PIN = 17; // CAN送信ピン（ESP32のGPIO5）
+// const int RX_PIN = 16; // CAN受信ピン（ESP32のGPIO4）
 
 const double  MIN_CURRENT = -20.0;  // モーターの最小電流値（A）- 逆転最大
 const double  MAX_CURRENT = 20.0;   // モーターの最大電流値（A）- 正転最大
@@ -193,9 +195,10 @@ void setup() {
     CAN.setPins(RX_PIN, TX_PIN);
 
     if (!CAN.begin(1000E3)) {
-        debug_println("CAN Init Failed");
-        while (1)
-            ; // CAN初期化失敗時は無限ループで停止
+        Serial.println("CAN Init Failed");
+        while (1) {
+            delay(1);
+        } // CAN初期化失敗時は無限ループで停止
     }
 
     volatile uint32_t* pREG_IER = (volatile uint32_t*)0x3ff6b010;
