@@ -3,8 +3,8 @@
 #include <PS4Controller.h>
 #include <cmath>
 
-#include "Debug.hpp"
 #include "CAN/SendPacket.hpp"
+#include "Debug.hpp"
 
 const bool G_DEBUG_ENABLED = true;
 
@@ -26,13 +26,13 @@ const uint8_t DEADZONE_STICK = 40; // スティックのデッドゾーン（テ
 const uint8_t DEADZONE_R2_L2 = 20; // R2/L2トリガーのデッドゾーン（テスト用に縮小）
 
 const int SERIAL_BAUDRATE = 9600;
-const int CAN_BAUDRATE = 100E3;
+const int CAN_BAUDRATE    = 100E3;
 
 const char* PS4_BT_ADDRESS = "e4:65:b8:7e:0f:f2";
 
 int16_t mapping_data(double x, double in_min, double in_max, int16_t out_min, int16_t out_max) {
     double proportion = (x - in_min) / (in_max - in_min);
-    double out_base = (double)(out_max - out_min);
+    double out_base   = (double)(out_max - out_min);
     return out_min + out_base * proportion;
 }
 
@@ -42,14 +42,13 @@ std::pair<int8_t, int8_t> split_data(int16_t formatted_data) {
     return {first_data, second_data};
 }
 
-
-
 class RoboMasMotor {
     private:
         int id;
+
     public:
         RoboMasMotor(int set_id) { id = set_id; }
-        int Id() { return id; }
+        int                 Id() { return id; }
         std::pair<int, int> ID_DATE() {
             int first  = (id - 1) * 2;     // 上位バイトの位置
             int second = (id - 1) * 2 + 1; // 下位バイトの位置
@@ -63,10 +62,10 @@ class RoboMasMotor {
 
 class Omnix4 {
     private:
-        RoboMasMotor FrontLeftOmni  = RoboMasMotor(3); // 前左モーター(ID:3)
-        RoboMasMotor BackLeftOmni   = RoboMasMotor(1); // 後左モーター(ID:1)
-        RoboMasMotor BackRightOmni  = RoboMasMotor(2); // 後右モーター(ID:2)
-        RoboMasMotor FrontRightOmni = RoboMasMotor(4); // 前右モーター(ID:4)
+        RoboMasMotor  FrontLeftOmni        = RoboMasMotor(3); // 前左モーター(ID:3)
+        RoboMasMotor  BackLeftOmni         = RoboMasMotor(1); // 後左モーター(ID:1)
+        RoboMasMotor  BackRightOmni        = RoboMasMotor(2); // 後右モーター(ID:2)
+        RoboMasMotor  FrontRightOmni       = RoboMasMotor(4); // 前右モーター(ID:4)
         CANSendPacket RoboMasControlPacket = CANSendPacket(0x200);
 
         const double MAX_CONTROLLER_INPUT = 127.0;
@@ -187,6 +186,12 @@ uint8_t packButtons(bool circle, bool triangle, bool square, bool cross, bool L1
            (R1 ? (1 << 6) : 0) |       // bit6: R1
            (R2 ? (1 << 7) : 0);        // bit7: R2
 }
+double Speed_percentage_stick;
+double speed_percentage_turn;
+void   SpeedPercentage() {
+    Speed_percentage_stick = PS4.Circle() ? 20.0 : 100.0;
+    speed_percentage_turn  = PS4.Circle() ? 30.0 : 100.0;
+}
 
 void setup() {
     debug_begin(SERIAL_BAUDRATE);
@@ -217,7 +222,7 @@ void loop() {
         TestOmni.Stop();
         return; // 以降の処理をスキップしてloop()を再開
     }
-
+    SpeedPercentage();
     int8_t  l_x = DeadZone(PS4.LStickX(), DEADZONE_STICK); // 左スティックX軸（移動用）
     int8_t  l_y = DeadZone(PS4.LStickY(), DEADZONE_STICK); // 左スティックY軸（移動用）
     uint8_t r_x = DeadZone(PS4.RStickX(), DEADZONE_STICK); // 右スティックX軸（未使用）
@@ -242,11 +247,11 @@ void loop() {
     CAN.beginPacket(SLAVE_2);
 
     if (R2_val > 0) {
-        TestOmni.R_Turn(R2_val, 100.0); // 100%を最大回転速度として設定
-        TestOmni.SendPacket();          // モーター制御データをCAN送信
+        TestOmni.R_Turn(R2_val, speed_percentage_turn); // 100%を最大回転速度として設定
+        TestOmni.SendPacket();                          // モーター制御データをCAN送信
 
     } else if (L2_val > 0) {
-        TestOmni.L_Turn(L2_val, 100.0); // 100%を最大回転速度として設定
+        TestOmni.L_Turn(L2_val, speed_percentage_turn); // 100%を最大回転速度として設定
         TestOmni.SendPacket();
         debug_println("L2"); // モーター制御データをCAN送信
 
@@ -259,8 +264,8 @@ void loop() {
         TestOmni.SendPacket();
 
     } else {
-        TestOmni.Shift(l_x, l_y, 100.0); // 100%を最大移動速度として設定
-        TestOmni.SendPacket();           // モーター制御データをCAN送信
+        TestOmni.Shift(l_x, l_y, Speed_percentage_stick); // 100%を最大移動速度として設定
+        TestOmni.SendPacket();                            // モーター制御データをCAN送信
     }
 
     debug_print("LStick: X=");
