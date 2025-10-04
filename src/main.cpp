@@ -20,11 +20,13 @@
 // CAN通信でのデバイスID定義
 const int8_t SLAVE_1 = 0x001; // スレーブ1のID（メインデータ送信用）
 const int8_t SLAVE_2 = 0x002; // スレーブ2のID（予備）
-const int8_t SLAVE_3 = 0x003; // スレーブ3のID（予備）
+// const int8_t SLAVE_3 = 0x003; // スレーブ3のID（予備）
 
 // CAN通信ピン設定
 const int TX_PIN = 5; // CAN送信ピン（ESP32のGPIO5）
 const int RX_PIN = 4; // CAN受信ピン（ESP32のGPIO4）
+// const int TX_PIN = 17; // CAN送信ピン（ESP32のGPIO5）
+// const int RX_PIN = 16; // CAN受信ピン（ESP32のGPIO4）
 
 // アナログ値からモーター制御値への変換定数
 const double  MIN_CURRENT = -20.0;  // モーターの最小電流値（A）- 逆転最大
@@ -34,7 +36,7 @@ const int16_t MAX_SENDNUM = 16384;  // CAN送信データの最大値（16bit符
 
 // アナログ入力のデッドゾーン設定（微細な揺れを無視するための閾値）
 // テスト用に小さく設定 - アナログ制御がわかりやすくなる
-const uint8_t DEADZONE_STICK = 40; // スティックのデッドゾーン（テスト用に縮小）
+const uint8_t DEADZONE_STICK = 50; // スティックのデッドゾーン（テスト用に縮小）
 const uint8_t DEADZONE_R2_L2 = 20; // R2/L2トリガーのデッドゾーン（テスト用に縮小）
 
 // =============================================================================
@@ -633,10 +635,12 @@ void setup() {
     // PS4.begin("08:b6:1f:ed:44:32"); // コントローラー1
     // PS4.begin("48:e7:29:a3:c5:0e"); // コントローラー2
     // PS4.begin("9c:58:84:86:b6:28"); // コントローラー3
-    // PS4.begin("e4:65:b8:7e:0c:2c"); // 現在使用中のコントローラー
-    PS4.begin("e4:65:b8:7e:07:02");
+    PS4.begin("e4:65:b8:7e:0f:f2"); // 現在使用中のコントローラー
+    // PS4.begin("e4:65:b8:7e:07:02");
+    // e4:65:b8:7e:07:02
 
     // ===============================================
+
     // 3. CAN通信システム初期化
     // ===============================================
     // CANピン設定（TX: GPIO5, RX: GPIO4）
@@ -646,8 +650,9 @@ void setup() {
     // この速度はモータードライバーと合わせる必要がある
     if (!CAN.begin(1000E3)) {
         Serial.println("CAN Init Failed");
-        while (1)
-            ; // CAN初期化失敗時は無限ループで停止
+        while (1) {
+            delay(1);
+        } // CAN初期化失敗時は無限ループで停止
     }
 
     // ===============================================
@@ -782,8 +787,10 @@ void loop() {
         // 【移動モード】トリガー未使用時はスティックで移動制御
         // 左スティックの2軸入力による全方向移動
         // アナログ入力強度に応じた滑らかな速度制御
-        TestOmni.Shift(l_x, l_y, 100.0); // 100%を最大移動速度として設定
-        TestOmni.SendPacket();           // モーター制御データをCAN送信
+        double speed_persentage = (PS4.Circle()) ? 20. : 100.;
+        TestOmni.Shift(l_x, l_y, speed_persentage);
+
+        TestOmni.SendPacket(); // モーター制御データをCAN送信
     }
 
     // ===============================================
@@ -798,7 +805,7 @@ void loop() {
     Serial.print(R2_val);
     Serial.print(" L2=");
     Serial.println(L2_val);
-    Serial.print(PS4.R2Value());
+    // Serial.print(PS4.R2Value());
 
     // 動作モードの表示
     // if (R2_val > 0) {
