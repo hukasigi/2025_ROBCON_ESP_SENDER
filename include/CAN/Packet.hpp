@@ -1,6 +1,8 @@
 #ifndef CANPACKET_SEEN
 #define CANPACKET_SEEN
 
+#include <array>
+
 struct CANPacket {
     CANPacket(int set_id);
     int id;
