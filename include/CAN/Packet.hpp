@@ -1,24 +1,15 @@
 #ifndef CANPACKET_SEEN
 #define CANPACKET_SEEN
 
-#include <CAN.h>
-
-class CANPacket {
-    public:
-        CANPacket(int packet_id);
-        virtual void BufInit();
-    protected:
-        int m_packet_id;
-        uint8_t m_buf[8];
+struct CANPacket {
+    CANPacket(int set_id);
+    int id;
+    std::array<uint8_t, 8> buf;
+    virtual void Clear();
 };
 
-CANPacket::CANPacket(int packet_id) {
-    m_packet_id = packet_id;
-    BufInit();
-}
+CANPacket::CANPacket(int set_id) : id(set_id) { Clear(); }
 
-void CANPacket::BufInit() {
-    for(uint8_t& b : m_buf) b = 0x00;
-}
+void CANPacket::Clear() { this->buf = {0, 0, 0, 0, 0, 0, 0, 0}; }
 
 #endif
