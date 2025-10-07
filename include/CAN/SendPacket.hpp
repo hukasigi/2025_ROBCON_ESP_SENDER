@@ -16,7 +16,8 @@ void CANSendPacket::SetByte(int byte_id, uint8_t set_byte) {
 }
 
 void CANSendPacket::SetBuf(uint8_t set_buf[8]) {
-    for(int i = 0; i < 8; i++) m_buf[i] = set_buf[i];
+    for (int i = 0; i < 8; i++)
+        m_buf[i] = set_buf[i];
 }
 
 void CANSendPacket::Send() {

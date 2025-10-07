@@ -3,6 +3,7 @@
 #include <PS4Controller.h>
 #include <cmath>
 
+#include "CAN/ReceivePacket.hpp"
 #include "CAN/SendPacket.hpp"
 #include "Debug.hpp"
 
@@ -50,9 +51,9 @@ class RoboMasMotor {
         RoboMasMotor(int set_id) { id = set_id; }
         int                 Id() { return id; }
         std::pair<int, int> ID_DATE() {
-            int first  = (id - 1) * 2;     // 上位バイトの位置
-            int second = (id - 1) * 2 + 1; // 下位バイトの位置
-            return {first, second};
+            int upper_data = (id - 1) * 2;     // 上位バイトの位置
+            int lower_data = (id - 1) * 2 + 1; // 下位バイトの位置
+            return {upper_data, lower_data};
         }
         std::pair<int8_t, int8_t> SendBufByte(double speed_percentage) {
             double proportion = speed_percentage / 100.0;
@@ -67,8 +68,7 @@ class Omnix4 {
         RoboMasMotor  BackRightOmni        = RoboMasMotor(2);
         RoboMasMotor  FrontRightOmni       = RoboMasMotor(4);
         CANSendPacket RoboMasControlPacket = CANSendPacket(0x200);
-
-        const double MAX_CONTROLLER_INPUT = 127.0;
+        const double  MAX_CONTROLLER_INPUT = 127.0;
 
         void MotorSpeedChange(RoboMasMotor motor, int speed_percentage) {
             auto byte_data = motor.SendBufByte(speed_percentage);
@@ -191,9 +191,14 @@ uint8_t packButtons(bool circle, bool triangle, bool square, bool cross, bool L1
 }
 double Speed_percentage_stick = 100.;
 double speed_percentage_turn  = 100.;
-void   SpeedPercentage() {
+
+void SpeedPercentage() {
     Speed_percentage_stick = PS4.Circle() ? 20.0 : 100.0;
     speed_percentage_turn  = PS4.Circle() ? 30.0 : 100.0;
+}
+
+int16_t unit_data(int8_t upper_data, int8_t lower_data) {
+    return upper_data << 8 | lower_data;
 }
 
 void setup() {
@@ -217,6 +222,8 @@ void setup() {
 
 CANSendPacket to_SLAVE_1 = CANSendPacket(SLAVE_1);
 CANSendPacket to_SLAVE_2 = CANSendPacket(SLAVE_2);
+
+CANReceivePacket receive_motor_1 = CANReceivePacket(0x201);
 
 void loop() {
     // 1. コントローラー接続状態の確認と安全処理
@@ -247,6 +254,11 @@ void loop() {
     to_SLAVE_2.SetByte(1, r_x);
     to_SLAVE_2.SetByte(2, r_y);
     to_SLAVE_2.Send();
+    receive_motor_1.Receive();
+    int8_t speed_upper_data_1 = receive_motor_1.GetByte(2);
+    int8_t speed_lower_data_1 = receive_motor_1.GetByte(3);
+    // 2bit 3bit 速度
+    int16_t receive_speed_1 = unit_data(speed_upper_data_1, speed_lower_data_1);
 
     // CAN.beginPacket(SLAVE_2);
 
@@ -272,30 +284,31 @@ void loop() {
         TestOmni.SendPacket();
     }
 
-    debug_print("LStick: X=");
-    debug_print(l_x);
-    debug_print(" Y=");
-    debug_println(l_y);
-    debug_print("Triggers: R2=");
-    debug_print(R2_val);
-    debug_print(" L2=");
-    debug_println(L2_val);
-    debug_print(PS4.R2Value());
+    debug_println(receive_speed_1);
+    // debug_print("LStick: X=");
+    // debug_print(l_x);
+    // debug_print(" Y=");
+    // debug_println(l_y);
+    // debug_print("Triggers: R2=");
+    // debug_print(R2_val);
+    // debug_print(" L2=");
+    // debug_println(L2_val);
+    // debug_print(PS4.R2Value());
 
-    debug_print("RIGHT TURN - Intensity: ");
-    debug_print((R2_val / 255.0) * 100);
-    debug_println("%");
-    debug_print("LEFT TURN - Intensity: ");
-    debug_print((L2_val / 255.0) * 100);
-    debug_println("%");
-    double distance  = std::sqrt(l_x * l_x + l_y * l_y);
-    double magnitude = distance / 127.0;
-    debug_print("MOVE - Distance: ");
-    debug_print(distance);
-    debug_print(" Intensity: ");
-    debug_print(magnitude * 100);
-    debug_println("%");
-    debug_println("---");
+    // debug_print("RIGHT TURN - Intensity: ");
+    // debug_print((R2_val / 255.0) * 100);
+    // debug_println("%");
+    // debug_print("LEFT TURN - Intensity: ");
+    // debug_print((L2_val / 255.0) * 100);
+    // debug_println("%");
+    // double distance  = std::sqrt(l_x * l_x + l_y * l_y);
+    // double magnitude = distance / 127.0;
+    // debug_print("MOVE - Distance: ");
+    // debug_print(distance);
+    // debug_print(" Intensity: ");
+    // debug_print(magnitude * 100);
+    // debug_println("%");
+    // debug_println("---");
 
     delay(5);
 }
