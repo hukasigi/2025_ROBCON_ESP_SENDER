@@ -3,45 +3,60 @@
 #include <PS4Controller.h>
 #include <cmath>
 
-#include "CAN/SendPacket.hpp"
-#include "Debug.hpp"
+const int8_t SLAVE_1 = 0x001; // スレーブ1のID
+const int8_t SLAVE_2 = 0x002; // スレーブ2のID
+const int8_t SLAVE_3 = 0x003; // スレーブ3のID
 
-const bool G_DEBUG_ENABLED = true;
+const int     TX_PIN         = 5;
+const int     RX_PIN         = 4;
+const double  MIN_CURRENT    = -20.0;
+const double  MAX_CURRENT    = 20.0;
+const int16_t MIN_SENDNUM    = -16384;
+const int16_t MAX_SENDNUM    = 16384;
+const uint8_t DEADZONE_STICK = 40;
+const uint8_t DEADZONE_R2_L2 = 40;
 
-const int8_t SLAVE_1 = 0x001; // スレーブ1のID（メインデータ送信用）
-const int8_t SLAVE_2 = 0x002; // スレーブ2のID（予備）
-// const int8_t SLAVE_3 = 0x003; // スレーブ3のID（予備）
-
-const int TX_PIN = 5; // CAN送信ピン（ESP32のGPIO5）
-const int RX_PIN = 4; // CAN受信ピン（ESP32のGPIO4）
-// const int TX_PIN = 17; // CAN送信ピン（ESP32のGPIO5）
-// const int RX_PIN = 16; // CAN受信ピン（ESP32のGPIO4）
-
-const double  MIN_CURRENT = -20.0;  // モーターの最小電流値（A）- 逆転最大
-const double  MAX_CURRENT = 20.0;   // モーターの最大電流値（A）- 正転最大
-const int16_t MIN_SENDNUM = -16384; // CAN送信データの最小値（16bit符号付き）
-const int16_t MAX_SENDNUM = 16384;  // CAN送信データの最大値（16bit符号付き）
-
-const uint8_t DEADZONE_STICK = 40; // スティックのデッドゾーン（テスト用に縮小）
-const uint8_t DEADZONE_R2_L2 = 20; // R2/L2トリガーのデッドゾーン（テスト用に縮小）
-
-const int SERIAL_BAUDRATE = 9600;
-const int CAN_BAUDRATE    = 100E3;
-
-const char* PS4_BT_ADDRESS = "e4:65:b8:7e:0f:f2";
-
-int16_t mapping_data(double x, double in_min, double in_max, int16_t out_min, int16_t out_max) {
+//-20 20 の電流値を -16384 16384にmap
+int16_t format_send_data(double x, double in_min, double in_max, int16_t out_min, int16_t out_max) {
     double proportion = (x - in_min) / (in_max - in_min);
     double out_base   = (double)(out_max - out_min);
     return out_min + out_base * proportion;
 }
-
+// 16bitのデータを、8bit 8bitにわける
 std::pair<int8_t, int8_t> split_data(int16_t formatted_data) {
-    int8_t first_data  = (formatted_data >> 8) & 0xFF; // 上位バイト取得
-    int8_t second_data = formatted_data & 0xFF;        // 下位バイト取得
+    int8_t first_data  = (formatted_data >> 8) & 0xFF;
+    int8_t second_data = formatted_data & 0xFF;
     return {first_data, second_data};
 }
+class Packet {
+    private:
+        // id：CAN通信で使う送信IDを保持する整数。
+        int id;
+        // buf[8]：8バイトのデータバッファ。CANパケットのデータをここに格納します。
+        int8_t buf[8];
 
+    public:
+        // idとデータを入れる関数
+        Packet(int set_id) {
+            id = set_id;
+            Init();
+        }
+        void Init() {
+            for (int8_t& data : buf)
+                data = 0x00;
+        }
+        // 参照している　このように返すと、呼び出し側で
+        // packet.At(2) = someValue; のように書いたときに、実際に buf[2] に直接値を書き込むことができる。
+        int8_t& At(int num) { return buf[num]; }
+        int     Id() { return id; }
+        void    Send() {
+            CAN.beginPacket(id);
+            for (int8_t data : buf)
+                CAN.write(data);
+            CAN.endPacket();
+            delay(10);
+        }
+};
 class RoboMasMotor {
     private:
         int id;
@@ -49,43 +64,53 @@ class RoboMasMotor {
     public:
         RoboMasMotor(int set_id) { id = set_id; }
         int                 Id() { return id; }
-        std::pair<int, int> ID_DATE() {
-            int first  = (id - 1) * 2;     // 上位バイトの位置
-            int second = (id - 1) * 2 + 1; // 下位バイトの位置
+        std::pair<int, int> SendBufNum() {
+            int first  = (id - 1) * 2;
+            int second = (id - 1) * 2 + 1;
             return {first, second};
         }
         std::pair<int8_t, int8_t> SendBufByte(double speed_percentage) {
             double proportion = speed_percentage / 100.0;
-            return split_data(mapping_data(20 * proportion, MIN_CURRENT, MAX_CURRENT, MIN_SENDNUM, MAX_SENDNUM));
+            return split_data(format_send_data(20 * proportion, MIN_CURRENT, MAX_CURRENT, MIN_SENDNUM, MAX_SENDNUM));
         }
 };
-
 class Omnix4 {
     private:
-        RoboMasMotor  FrontLeftOmni        = RoboMasMotor(3); // 前左モーター(ID:3)
-        RoboMasMotor  BackLeftOmni         = RoboMasMotor(1); // 後左モーター(ID:1)
-        RoboMasMotor  BackRightOmni        = RoboMasMotor(2); // 後右モーター(ID:2)
-        RoboMasMotor  FrontRightOmni       = RoboMasMotor(4); // 前右モーター(ID:4)
-        CANSendPacket RoboMasControlPacket = CANSendPacket(0x200);
-
+        RoboMasMotor FrontLeftOmni        = RoboMasMotor(3);
+        RoboMasMotor BackLeftOmni         = RoboMasMotor(1);
+        RoboMasMotor BackRightOmni        = RoboMasMotor(2);
+        RoboMasMotor FrontRightOmni       = RoboMasMotor(4);
+        Packet       TxBuf                = Packet(0x200);
         const double MAX_CONTROLLER_INPUT = 127.0;
-
-        void MotorSpeedChange(RoboMasMotor motor, int speed_percentage) {
-            auto byte_data = motor.SendBufByte(speed_percentage);
-            auto position  = motor.ID_DATE();
-
-            RoboMasControlPacket.SetByte(position.first, byte_data.first);
-            RoboMasControlPacket.SetByte(position.second, byte_data.second);
+        void         MotorSpeedChange(RoboMasMotor motor, int speed_percentage) {
+            TxBuf.At(motor.SendBufNum().first)  = motor.SendBufByte(speed_percentage).first;
+            TxBuf.At(motor.SendBufNum().second) = motor.SendBufByte(speed_percentage).second;
         }
 
     public:
         Omnix4() {}
+        void SendPacket() { TxBuf.Send(); }
+        // void Shift(int x, int y,
+        //            double max_speed_percentage) { // 座標から距離を求めそれベクトルから角度を求め45度分引いてベクトルを求める
+        //     double distance = std::sqrt(x * x + y * y);
+        //     double radian   = std::acos(x / distance); // distance
+        //     if (y < 0) radian = 0 - radian;
+        //     radian -= PI / 4;
+        //     double vector13 = std::cos(radian) * max_speed_percentage;
+        //     double vector24 = std::sin(radian) * max_speed_percentage;
 
-        void SendPacket() { RoboMasControlPacket.Send(); }
+        //     Serial.println(vector13);
+        //     Serial.println(vector24);
+        //     MotorSpeedChange(FrontLeftOmni, vector13);
+        //     MotorSpeedChange(BackLeftOmni, vector24);
+        //     MotorSpeedChange(BackRightOmni, 0 - vector13);
+        //     this->MotorSpeedChange(FrontRightOmni, 0 - vector24);
+        //     delay(1000);
+        // }
         void Shift(int x, int y, double max_speed_percentage) {
-            double distance = std::sqrt(x * x + y * y); // ピタゴラスの定理でベクトル長を算出
-
+            double distance = std::sqrt(x * x + y * y); // 倒し具合
             if (distance == 0) {
+                // スティックが真ん中のときは止める
                 MotorSpeedChange(FrontLeftOmni, 0);
                 MotorSpeedChange(BackLeftOmni, 0);
                 MotorSpeedChange(BackRightOmni, 0);
@@ -93,205 +118,159 @@ class Omnix4 {
                 return;
             }
 
-            double nx = x / distance; // X方向成分（-1.0～1.0）
-            double ny = y / distance; // Y方向成分（-1.0～1.0）
+            // 正規化した入力ベクトル
+            double nx = x / distance;
+            double ny = y / distance;
 
-            double max_input = 127.0;                       // PS4スティックの最大入力値
-            if (distance > max_input) distance = max_input; // 上限制限
-            double magnitude = distance / max_input;        // 0.0～1.0の強度
+            // 倒し具合を 0〜1 にスケーリング（必要なら最大値を決める）
+            double max_input = 127.0; // PS4のスティック最大
+            if (distance > max_input) distance = max_input;
+            double magnitude = distance / max_input;
 
+            // 角度を求めて45度回転
             double radian = atan2(ny, nx);
-
             radian -= PI / 4;
 
-            double vector13 = std::cos(radian) * max_speed_percentage * magnitude; // 対角ベクトル1-3
-            double vector24 = std::sin(radian) * max_speed_percentage * magnitude; // 対角ベクトル2-4
+            // 倒し具合を掛けて速度を決定
+            double vector13 = std::cos(radian) * max_speed_percentage * magnitude;
+            double vector24 = std::sin(radian) * max_speed_percentage * magnitude;
 
-            debug_print("MOVE Vector13=");
-            debug_print(vector13);
-            debug_print("% Vector24=");
-            debug_print(vector24);
-            debug_println("%");
-            debug_print("Motors: FL=");
-            debug_print(vector13);
-            debug_print(" BL=");
-            debug_print(vector24);
-            debug_print(" BR=");
-            debug_print(-vector13);
-            debug_print(" FR=");
-            debug_println(-vector24);
+            Serial.println(vector13);
+            Serial.println(vector24);
 
-            MotorSpeedChange(FrontLeftOmni, vector13);   // 前左 = ベクトル1-3成分
-            MotorSpeedChange(BackLeftOmni, vector24);    // 後左 = ベクトル2-4成分
-            MotorSpeedChange(BackRightOmni, -vector13);  // 後右 = ベクトル1-3の逆
-            MotorSpeedChange(FrontRightOmni, -vector24); // 前右 = ベクトル2-4の逆
-        }
-        void Front() {
-            MotorSpeedChange(FrontLeftOmni, 100);
-            MotorSpeedChange(FrontRightOmni, 100);
-            MotorSpeedChange(BackLeftOmni, -100);
-            MotorSpeedChange(BackRightOmni, -100);
-        }
-        void Back() {
-            MotorSpeedChange(FrontLeftOmni, -100);
-            MotorSpeedChange(FrontRightOmni, -100);
-            MotorSpeedChange(BackLeftOmni, 100);
-            MotorSpeedChange(BackRightOmni, 100);
+            MotorSpeedChange(FrontLeftOmni, vector13);
+            MotorSpeedChange(BackLeftOmni, vector24);
+            MotorSpeedChange(BackRightOmni, -vector13);
+            MotorSpeedChange(FrontRightOmni, -vector24);
         }
 
         void R_Turn(u_int8_t R2_val, double speed_percentage) {
             double R2_persentage = R2_val / 255.0;
-
             MotorSpeedChange(FrontLeftOmni, speed_percentage * R2_persentage);
             MotorSpeedChange(BackLeftOmni, speed_percentage * R2_persentage);
             MotorSpeedChange(BackRightOmni, speed_percentage * R2_persentage);
             MotorSpeedChange(FrontRightOmni, speed_percentage * R2_persentage);
         }
-
         void L_Turn(uint8_t L2_val, double speed_percentage) {
             double L2_persetage = L2_val / 255.0;
-
             MotorSpeedChange(FrontLeftOmni, -speed_percentage * L2_persetage);
             MotorSpeedChange(BackLeftOmni, -speed_percentage * L2_persetage);
             MotorSpeedChange(BackRightOmni, -speed_percentage * L2_persetage);
             MotorSpeedChange(FrontRightOmni, -speed_percentage * L2_persetage);
         }
-
         void Stop() {
             MotorSpeedChange(FrontLeftOmni, 0);
             MotorSpeedChange(BackLeftOmni, 0);
             MotorSpeedChange(BackRightOmni, 0);
             MotorSpeedChange(FrontRightOmni, 0);
         }
-
         void TestMove(double x) {
-            MotorSpeedChange(FrontLeftOmni, x);     // 前左モーター
-            MotorSpeedChange(BackRightOmni, 0 - x); // 後右モーター（逆方向）
+            MotorSpeedChange(FrontLeftOmni, x);
+            MotorSpeedChange(BackRightOmni, 0 - x);
         }
 };
 
 Omnix4 TestOmni = Omnix4();
 
+// void setup() {
+//   CAN.setPins(RX_PIN, TX_PIN);
+//   CAN.begin(1000E3);
+// }
+
+// void loop() {
+//     TestOmni.Shift(50, 50, 30.0);
+//     TestOmni.SendPacket();
+// }
+
+// デッドゾーン処理（–128…127 の範囲で扱う）
 int8_t DeadZone(int16_t value, int ZONE) {
     return (abs(value) < ZONE) ? 0 : value;
 }
 
+// ボタン８つを 1 バイトにビットパック
 uint8_t packButtons(bool circle, bool triangle, bool square, bool cross, bool L1, bool L2, bool R1, bool R2) {
-    return (circle ? (1 << 0) : 0) |   // bit0: Circle
-           (triangle ? (1 << 1) : 0) | // bit1: Triangle
-           (square ? (1 << 2) : 0) |   // bit2: Square
-           (cross ? (1 << 3) : 0) |    // bit3: Cross
-           (L1 ? (1 << 4) : 0) |       // bit4: L1
-           (L2 ? (1 << 5) : 0) |       // bit5: L2
-           (R1 ? (1 << 6) : 0) |       // bit6: R1
-           (R2 ? (1 << 7) : 0);        // bit7: R2
-}
-double Speed_percentage_stick;
-double speed_percentage_turn;
-void   SpeedPercentage() {
-    Speed_percentage_stick = PS4.Circle() ? 20.0 : 100.0;
-    speed_percentage_turn  = PS4.Circle() ? 30.0 : 100.0;
+    return (circle ? (1 << 0) : 0) | (triangle ? (1 << 1) : 0) | (square ? (1 << 2) : 0) | (cross ? (1 << 3) : 0) |
+           (L1 ? (1 << 4) : 0) | (L2 ? (1 << 5) : 0) | (R1 ? (1 << 6) : 0) | (R2 ? (1 << 7) : 0);
 }
 
 void setup() {
-    debug_begin(SERIAL_BAUDRATE);
-    PS4.begin(PS4_BT_ADDRESS);
+    Serial.begin(115200);
+    // while (!Serial)
+    //     ;
+    // PS4.begin("08:b6:1f:ed:44:32");
+    // PS4.begin("48:e7:29:a3:c5:0e");
+    PS4.begin("9c:58:84:86:b6:28");
 
+    // CAN.setPins(4, 5);
     CAN.setPins(RX_PIN, TX_PIN);
-
     if (!CAN.begin(1000E3)) {
         Serial.println("CAN Init Failed");
-        while (1) {
-            delay(1);
-        } // CAN初期化失敗時は無限ループで停止
+        while (1)
+            ;
     }
-
     volatile uint32_t* pREG_IER = (volatile uint32_t*)0x3ff6b010;
     *pREG_IER &= ~(uint8_t)0x10;
-
-    debug_println("Ready"); // システム準備完了の通知
+    Serial.println("Ready");
 }
 
-CANSendPacket to_SLAVE_1 = CANSendPacket(SLAVE_1);
-CANSendPacket to_SLAVE_2 = CANSendPacket(SLAVE_2);
-
 void loop() {
-    // 1. コントローラー接続状態の確認と安全処理
+
     if (!PS4.isConnected()) {
-        // コントローラー未接続時は安全のため全モーター停止
         TestOmni.Stop();
-        return; // 以降の処理をスキップしてloop()を再開
+        return;
     }
-    SpeedPercentage();
-    int8_t  l_x = DeadZone(PS4.LStickX(), DEADZONE_STICK); // 左スティックX軸（移動用）
-    int8_t  l_y = DeadZone(PS4.LStickY(), DEADZONE_STICK); // 左スティックY軸（移動用）
-    uint8_t r_x = DeadZone(PS4.RStickX(), DEADZONE_STICK); // 右スティックX軸（未使用）
-    uint8_t r_y = DeadZone(PS4.RStickY(), DEADZONE_STICK); // 右スティックY軸（未使用）
+    // 1) スティック値取得（–128…127）
+    int8_t l_x    = DeadZone(PS4.LStickX(), DEADZONE_STICK);
+    int8_t l_y    = DeadZone(PS4.LStickY(), DEADZONE_STICK);
+    int8_t r_x    = DeadZone(PS4.RStickX(), DEADZONE_STICK);
+    int8_t r_y    = DeadZone(PS4.RStickY(), DEADZONE_STICK);
+    int    R2_val = DeadZone(PS4.R2Value(), DEADZONE_R2_L2);
+    int    L2_val = DeadZone(PS4.L2Value(), DEADZONE_R2_L2);
 
-    int R2_val = PS4.R2Value(); // 右回転用トリガー
-    int L2_val = PS4.L2Value(); // 左回転用トリガー
+    // 2) ボタンをビットパック
+    uint8_t btns = packButtons(PS4.Circle(), PS4.Triangle(), PS4.Square(), PS4.Cross(), PS4.L1(), PS4.L2(), PS4.R1(), PS4.R2());
 
-    uint8_t btns_1 =
-        packButtons(PS4.Circle(), PS4.Triangle(), PS4.Square(), PS4.Cross(), PS4.L1(), PS4.R1(), PS4.Left(), PS4.Right());
+    // 3) CANフレーム送信
+    CAN.beginPacket(SLAVE_1);
 
-    to_SLAVE_1.SetByte(0, btns_1);
-    to_SLAVE_1.SetByte(1, r_x);
-    to_SLAVE_1.SetByte(2, r_y);
-    to_SLAVE_1.Send();
+    // CAN.write(l_x);  // Byte1: LStick X
+    // CAN.write(l_y);  // Byte2: LStick Y
+    // CAN.write(r_x);  // Byte3: RStick X
+    // CAN.write(r_y);  // Byte4: RStick Y
+    // CAN.write(btns); // Byte0: ボタン８つ
+    // CAN.write(1);
+    // CAN.write(1);
+    // CAN.write(1);
 
-    to_SLAVE_2.SetByte(0, btns_1);
-    to_SLAVE_2.SetByte(1, r_x);
-    to_SLAVE_2.SetByte(2, r_y);
-    to_SLAVE_2.Send();
+    CAN.write(PS4.Circle());   // Byte1: LStick X
+    CAN.write(PS4.Square());   // Byte2: LStick Y
+    CAN.write(PS4.Triangle()); // Byte3: RStick X
+    CAN.write(PS4.Cross());    // Byte4: RStick Y
+    CAN.write(PS4.L1());       // Byte0: ボタン８つ
+    CAN.write(PS4.L2());
+    CAN.write(PS4.R1());
+    CAN.write(PS4.R2());
 
-    CAN.beginPacket(SLAVE_2);
+    CAN.endPacket();
 
     if (R2_val > 0) {
-        TestOmni.R_Turn(R2_val, speed_percentage_turn); // 100%を最大回転速度として設定
-        TestOmni.SendPacket();                          // モーター制御データをCAN送信
-
+        TestOmni.R_Turn(R2_val, 100.0);
+        TestOmni.SendPacket();
     } else if (L2_val > 0) {
-        TestOmni.L_Turn(L2_val, speed_percentage_turn); // 100%を最大回転速度として設定
+        TestOmni.L_Turn(L2_val, 100.0);
         TestOmni.SendPacket();
-        debug_println("L2"); // モーター制御データをCAN送信
-
-    } else if (PS4.Up()) {
-        TestOmni.Front();
-        TestOmni.SendPacket();
-
-    } else if (PS4.Down()) {
-        TestOmni.Back();
-        TestOmni.SendPacket();
-
     } else {
-        TestOmni.Shift(l_x, l_y, Speed_percentage_stick); // 100%を最大移動速度として設定
-        TestOmni.SendPacket();                            // モーター制御データをCAN送信
+        TestOmni.Shift(l_x, l_y, 100.0);
+        TestOmni.SendPacket();
     }
 
-    debug_print("LStick: X=");
-    debug_print(l_x);
-    debug_print(" Y=");
-    debug_println(l_y);
-    debug_print("Triggers: R2=");
-    debug_print(R2_val);
-    debug_print(" L2=");
-    debug_println(L2_val);
-    debug_print(PS4.R2Value());
+    // Serial.println(l_x);
+    // Serial.println(l_y);
+    // Serial.println(r_x);
+    // Serial.println(r_y);
+    // Serial.println(PS4.R2Value());
+    // Serial.println(btns);
 
-    debug_print("RIGHT TURN - Intensity: ");
-    debug_print((R2_val / 255.0) * 100);
-    debug_println("%");
-    debug_print("LEFT TURN - Intensity: ");
-    debug_print((L2_val / 255.0) * 100);
-    debug_println("%");
-    double distance  = std::sqrt(l_x * l_x + l_y * l_y);
-    double magnitude = distance / 127.0;
-    debug_print("MOVE - Distance: ");
-    debug_print(distance);
-    debug_print(" Intensity: ");
-    debug_print(magnitude * 100);
-    debug_println("%");
-    debug_println("---");
-
-    delay(5);
+    // Serial.println("Sent button+stick");
+    delay(10);
 }
