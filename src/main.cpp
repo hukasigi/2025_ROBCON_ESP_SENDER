@@ -16,7 +16,7 @@ const uint8_t DEADZONE_R2_L2 = 40;
 
 const int SERIAL_BAUDRATE = 9600;
 const int CAN_BAUDRATE = 1000E3;
-const char* PS4_BT_ADDRESS = "s4:65:b8:7e:0f:f2";
+const char* PS4_BT_ADDRESS = "e4:65:b8:7e:0f:f2";
 
 //-20 20 の電流値を -16384 16384にmap
 int16_t format_send_data(double x, double in_min, double in_max, int16_t out_min, int16_t out_max) {
