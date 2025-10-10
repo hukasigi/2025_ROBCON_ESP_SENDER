@@ -1,11 +1,9 @@
-#include <Arduino.h>
 #include <CAN.h>
 #include <PS4Controller.h>
 #include <cmath>
 
 const int8_t SLAVE_1 = 0x001; // スレーブ1のID
 const int8_t SLAVE_2 = 0x002; // スレーブ2のID
-const int8_t SLAVE_3 = 0x003; // スレーブ3のID
 
 const int     TX_PIN         = 5;
 const int     RX_PIN         = 4;
@@ -15,6 +13,10 @@ const int16_t MIN_SENDNUM    = -16384;
 const int16_t MAX_SENDNUM    = 16384;
 const uint8_t DEADZONE_STICK = 40;
 const uint8_t DEADZONE_R2_L2 = 40;
+
+const int SERIAL_BAUDRATE = 9600;
+const int CAN_BAUDRATE = 1000E3;
+const char* PS4_BT_ADDRESS = "s4:65:b8:7e:0f:f2";
 
 //-20 20 の電流値を -16384 16384にmap
 int16_t format_send_data(double x, double in_min, double in_max, int16_t out_min, int16_t out_max) {
@@ -176,17 +178,17 @@ uint8_t packButtons(bool circle, bool triangle, bool square, bool cross, bool L1
 }
 
 void setup() {
-    Serial.begin(115200);
+    Serial.begin(SERIAL_BAUDRATE);
     // while (!Serial)
     //     ;
     // PS4.begin("08:b6:1f:ed:44:32");
     // PS4.begin("48:e7:29:a3:c5:0e");
-    PS4.begin("e4:65:b8:7e:0f:f2");
+    PS4.begin(PS4_BT_ADDRESS);
     //  e4:65:b8:7e:0f:f2
 
     // CAN.setPins(4, 5);
     CAN.setPins(RX_PIN, TX_PIN);
-    if (!CAN.begin(1000E3)) {
+    if (!CAN.begin(CAN_BAUDRATE)) {
         Serial.println("CAN Init Failed");
         while (1)
             ;
