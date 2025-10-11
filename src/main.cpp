@@ -7,14 +7,16 @@ const int8_t SLAVE_1 = 0x001; // スレーブ1のID
 const int8_t SLAVE_2 = 0x002; // スレーブ2のID
 const int8_t SLAVE_3 = 0x003; // スレーブ3のID
 
-const int     TX_PIN         = 5;
-const int     RX_PIN         = 4;
-const double  MIN_CURRENT    = -20.0;
-const double  MAX_CURRENT    = 20.0;
-const int16_t MIN_SENDNUM    = -16384;
-const int16_t MAX_SENDNUM    = 16384;
-const uint8_t DEADZONE_STICK = 40;
-const uint8_t DEADZONE_R2_L2 = 40;
+const int     TX_PIN                 = 5;
+const int     RX_PIN                 = 4;
+const double  MIN_CURRENT            = -20.0;
+const double  MAX_CURRENT            = 20.0;
+const int16_t MIN_SENDNUM            = -16384;
+const int16_t MAX_SENDNUM            = 16384;
+const double  MOTOR_PERSENTAGE       = 0.15;
+const double  NOMAL_MOTOR_PERSENTAGE = 0.3;
+const uint8_t DEADZONE_STICK         = 40;
+const uint8_t DEADZONE_R2_L2         = 40;
 
 //-20 20 の電流値を -16384 16384にmap
 int16_t format_send_data(double x, double in_min, double in_max, int16_t out_min, int16_t out_max) {
@@ -82,9 +84,13 @@ class Omnix4 {
         RoboMasMotor FrontRightOmni       = RoboMasMotor(4);
         Packet       TxBuf                = Packet(0x200);
         const double MAX_CONTROLLER_INPUT = 127.0;
-        void         MotorSpeedChange(RoboMasMotor motor, int speed_percentage) {
+        void         MotorSpeedChange(RoboMasMotor motor, double speed_percentage) {
             TxBuf.At(motor.SendBufNum().first)  = motor.SendBufByte(speed_percentage).first;
             TxBuf.At(motor.SendBufNum().second) = motor.SendBufByte(speed_percentage).second;
+        }
+
+        double MotorPower(double motor_power, bool PS4_circle = PS4.Circle()) {
+            return motor_power * (PS4_circle ? 0.15 : 0.3);
         }
 
     public:
@@ -120,25 +126,27 @@ class Omnix4 {
             Serial.println(vector13);
             Serial.println(vector24);
 
-            MotorSpeedChange(FrontLeftOmni, vector13);
-            MotorSpeedChange(BackLeftOmni, vector24);
-            MotorSpeedChange(BackRightOmni, -vector13);
-            MotorSpeedChange(FrontRightOmni, -vector24);
+            MotorSpeedChange(FrontLeftOmni, MotorPower(vector13));
+            MotorSpeedChange(BackLeftOmni, MotorPower(vector24));
+            MotorSpeedChange(BackRightOmni, -MotorPower(vector13));
+            MotorSpeedChange(FrontRightOmni, -MotorPower(vector24));
         }
 
         void R_Turn(u_int8_t R2_val, double speed_percentage) {
             double R2_persentage = double(R2_val) / 255.0;
-            MotorSpeedChange(FrontLeftOmni, speed_percentage * R2_persentage);
-            MotorSpeedChange(BackLeftOmni, speed_percentage * R2_persentage);
-            MotorSpeedChange(BackRightOmni, speed_percentage * R2_persentage);
-            MotorSpeedChange(FrontRightOmni, speed_percentage * R2_persentage);
+
+            MotorSpeedChange(FrontLeftOmni, MotorPower(R2_persentage));
+            MotorSpeedChange(BackLeftOmni, MotorPower(R2_persentage));
+            MotorSpeedChange(BackRightOmni, MotorPower(R2_persentage));
+            MotorSpeedChange(FrontRightOmni, MotorPower(R2_persentage));
         }
         void L_Turn(uint8_t L2_val, double speed_percentage) {
             double L2_persetage = double(L2_val) / 255.0;
-            MotorSpeedChange(FrontLeftOmni, -speed_percentage * L2_persetage);
-            MotorSpeedChange(BackLeftOmni, -speed_percentage * L2_persetage);
-            MotorSpeedChange(BackRightOmni, -speed_percentage * L2_persetage);
-            MotorSpeedChange(FrontRightOmni, -speed_percentage * L2_persetage);
+
+            MotorSpeedChange(FrontLeftOmni, -MotorPower(L2_persetage));
+            MotorSpeedChange(BackLeftOmni, -MotorPower(L2_persetage));
+            MotorSpeedChange(BackRightOmni, -MotorPower(L2_persetage));
+            MotorSpeedChange(FrontRightOmni, -MotorPower(L2_persetage));
         }
         void Stop() {
             MotorSpeedChange(FrontLeftOmni, 0);
@@ -165,7 +173,10 @@ Omnix4 TestOmni = Omnix4();
 // }
 
 // デッドゾーン処理（–128…127 の範囲で扱う）
-int8_t DeadZone(int16_t value, int ZONE) {
+int8_t DeadZone_int8_t(int16_t value, int ZONE) {
+    return (abs(value) < ZONE) ? 0 : value;
+}
+uint8_t DeadZone_uint8_t(u_int8_t value, uint8_t ZONE) {
     return (abs(value) < ZONE) ? 0 : value;
 }
 
@@ -203,12 +214,12 @@ void loop() {
         return;
     }
     // 1) スティック値取得（–128…127）
-    int8_t l_x    = DeadZone(PS4.LStickX(), DEADZONE_STICK);
-    int8_t l_y    = DeadZone(PS4.LStickY(), DEADZONE_STICK);
-    int8_t r_x    = DeadZone(PS4.RStickX(), DEADZONE_STICK);
-    int8_t r_y    = DeadZone(PS4.RStickY(), DEADZONE_STICK);
-    int    R2_val = DeadZone(PS4.R2Value(), DEADZONE_R2_L2);
-    int    L2_val = DeadZone(PS4.L2Value(), DEADZONE_R2_L2);
+    int8_t  l_x    = DeadZone_int8_t(PS4.LStickX(), DEADZONE_STICK);
+    int8_t  l_y    = DeadZone_int8_t(PS4.LStickY(), DEADZONE_STICK);
+    int8_t  r_x    = DeadZone_int8_t(PS4.RStickX(), DEADZONE_STICK);
+    int8_t  r_y    = DeadZone_int8_t(PS4.RStickY(), DEADZONE_STICK);
+    uint8_t R2_val = DeadZone_uint8_t(PS4.R2Value(), DEADZONE_R2_L2);
+    uint8_t L2_val = DeadZone_uint8_t(PS4.L2Value(), DEADZONE_R2_L2);
 
     // 2) ボタンをビットパック
     uint8_t btns =
@@ -247,9 +258,9 @@ void loop() {
     Serial.println(l_y);
     Serial.println(r_x);
     Serial.println(r_y);
-    Serial.println(PS4.R2Value());
+    Serial.println(L2_val);
     Serial.println(btns);
 
     // Serial.println("Sent button+stick");
-    delay(10);
+    delay(1);
 }
