@@ -190,14 +190,7 @@ uint8_t packButtons(bool circle, bool triangle, bool square, bool cross, bool L1
 
 void setup() {
     Serial.begin(SERIAL_BAUDRATE);
-    // while (!Serial)
-    //     ;
-    // PS4.begin("08:b6:1f:ed:44:32");
-    // PS4.begin("48:e7:29:a3:c5:0e");
     PS4.begin(PS4_BT_ADDRESS);
-    //  e4:65:b8:7e:0f:f2
-
-    // CAN.setPins(4, 5);
     CAN.setPins(RX_PIN, TX_PIN);
     if (!CAN.begin(CAN_BAUDRATE)) {
         Serial.println("CAN Init Failed");
@@ -210,7 +203,6 @@ void setup() {
 }
 
 void loop() {
-
     if (!PS4.isConnected()) {
         TestOmni.Stop();
         return;
