@@ -21,6 +21,8 @@ const int   SERIAL_BAUDRATE = 115200;
 const int   CAN_BAUDRATE    = 1000E3;
 const char* PS4_BT_ADDRESS  = "e4:65:b8:7e:0f:f2";
 
+const double INPUT_COUNT_PER_EXEC{0.01};
+
 //-20 20 の電流値を -16384 16384にmap
 int16_t format_send_data(double x, double in_min, double in_max, int16_t out_min, int16_t out_max) {
     double proportion = (x - in_min) / (in_max - in_min);
@@ -71,7 +73,7 @@ class Omnix4 {
     public:
         Omnix4() {}
         void SendPacket() { TxBuf.Send(); }
-        void Shift(int x, int y, double max_speed_percentage) {
+        void Shift(int x, int y, double max_speed_percentage, double count) {
             double distance = std::sqrt(x * x + y * y); // 倒し具合
             if (distance == 0) {
                 MotorSpeedChange(FrontLeftOmni, 0);
@@ -93,6 +95,9 @@ class Omnix4 {
             // 角度を求めて45度回転
             double radian = atan2(ny, nx);
             radian -= PI / 4;
+            
+            // countに応じて補正
+            max_speed_percentage *= count;
 
             // 倒し具合を掛けて速度を決定
             double vector13 = std::cos(radian) * max_speed_percentage * magnitude;
@@ -138,16 +143,6 @@ class Omnix4 {
 
 Omnix4 TestOmni = Omnix4();
 
-// void setup() {
-//   CAN.setPins(RX_PIN, TX_PIN);
-//   CAN.begin(1000E3);
-// }
-
-// void loop() {
-//     TestOmni.Shift(50, 50, 30.0);
-//     TestOmni.SendPacket();
-// }
-
 // デッドゾーン処理（–128…127 の範囲で扱う）
 int8_t DeadZone_int8_t(int16_t value, int ZONE) {
     return (abs(value) < ZONE) ? 0 : value;
@@ -174,6 +169,14 @@ void setup() {
     volatile uint32_t* pREG_IER = (volatile uint32_t*)0x3ff6b010;
     *pREG_IER &= ~(uint8_t)0x10;
     Serial.println("Ready");
+}
+
+double input_count{0.0};
+void check_and_count(double& count, double change) {
+    count += change;
+
+    if(count > 1.0) count = 1.0;
+    if(count < 0.0) count = 0.0;
 }
 
 void loop() {
@@ -211,16 +214,21 @@ void loop() {
 
     if (R2_val > 0 && L2_val > 0) {
         TestOmni.Stop();
+        check_and_count(input_count, -INPUT_COUNT_PER_EXEC);
     } else if (R2_val > 0) {
         TestOmni.R_Turn(R2_val, 30.0);
+        check_and_count(input_count, INPUT_COUNT_PER_EXEC);
         // Serial.println("R_turn");
     } else if (L2_val > 0) {
         TestOmni.L_Turn(L2_val, 30.0);
+        check_and_count(input_count, INPUT_COUNT_PER_EXEC);
         // Serial.println("L_turn");
     } else if (l_x != 0 || l_y != 0) {
-        TestOmni.Shift(l_x, l_y, 30.0);
+        TestOmni.Shift(l_x, l_y, 30.0, input_count);
+        check_and_count(input_count, INPUT_COUNT_PER_EXEC);
     } else {
         TestOmni.Stop();
+        check_and_count(input_count, -INPUT_COUNT_PER_EXEC);
     }
 
     TestOmni.SendPacket();
