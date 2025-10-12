@@ -152,6 +152,10 @@ uint8_t packButtons(bool circle, bool triangle, bool square, bool cross, bool L1
            (L1 ? (1 << 4) : 0) | (R1 ? (1 << 5) : 0) | (left ? (1 << 6) : 0) | (right ? (1 << 7) : 0);
 }
 
+int16_t unit_data(int8_t upper_data, int8_t lower_data) {
+    return upper_data << 8 | lower_data;
+}
+
 void setup() {
     Serial.begin(SERIAL_BAUDRATE);
     PS4.begin(PS4_BT_ADDRESS);
