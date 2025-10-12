@@ -16,9 +16,9 @@ const double  NOMAL_MOTOR_PERSENTAGE = 0.3;
 const uint8_t DEADZONE_STICK         = 40;
 const uint8_t DEADZONE_R2_L2         = 40;
 
-const int SERIAL_BAUDRATE = 9600;
-const int CAN_BAUDRATE = 1000E3;
-const char* PS4_BT_ADDRESS = "e4:65:b8:7e:0f:f2";
+const int   SERIAL_BAUDRATE = 115200;
+const int   CAN_BAUDRATE    = 1000E3;
+const char* PS4_BT_ADDRESS  = "e4:65:b8:7e:0f:f2";
 
 //-20 20 の電流値を -16384 16384にmap
 int16_t format_send_data(double x, double in_min, double in_max, int16_t out_min, int16_t out_max) {
@@ -92,7 +92,7 @@ class Omnix4 {
         }
 
         double MotorPower(double motor_power, bool PS4_circle = PS4.Circle()) {
-            return motor_power * (PS4_circle ? 0.15 : 0.3);
+            return motor_power * (PS4_circle ? 0.15 : 1.0);
         }
 
     public:
@@ -128,27 +128,28 @@ class Omnix4 {
             Serial.println(vector13);
             Serial.println(vector24);
 
-            MotorSpeedChange(FrontLeftOmni, MotorPower(vector13));
-            MotorSpeedChange(BackLeftOmni, MotorPower(vector24));
-            MotorSpeedChange(BackRightOmni, -MotorPower(vector13));
-            MotorSpeedChange(FrontRightOmni, -MotorPower(vector24));
+            MotorSpeedChange(FrontLeftOmni, vector13);
+            MotorSpeedChange(BackLeftOmni, vector24);
+            MotorSpeedChange(BackRightOmni, -vector13);
+            MotorSpeedChange(FrontRightOmni, -vector24);
         }
 
         void R_Turn(u_int8_t R2_val, double speed_percentage) {
-            double R2_persentage = double(R2_val) / 255.0;
+            double R2_persentage = double(R2_val) / 255.0 * speed_percentage;
 
-            MotorSpeedChange(FrontLeftOmni, MotorPower(R2_persentage));
-            MotorSpeedChange(BackLeftOmni, MotorPower(R2_persentage));
-            MotorSpeedChange(BackRightOmni, MotorPower(R2_persentage));
-            MotorSpeedChange(FrontRightOmni, MotorPower(R2_persentage));
+            MotorSpeedChange(FrontLeftOmni, R2_persentage);
+            MotorSpeedChange(BackLeftOmni, R2_persentage);
+            MotorSpeedChange(BackRightOmni, R2_persentage);
+            MotorSpeedChange(FrontRightOmni, R2_persentage);
         }
         void L_Turn(uint8_t L2_val, double speed_percentage) {
-            double L2_persetage = double(L2_val) / 255.0;
+            double L2_persetage = double(L2_val) / 255.0 * speed_percentage;
+            Serial.println(L2_persetage);
 
-            MotorSpeedChange(FrontLeftOmni, -MotorPower(L2_persetage));
-            MotorSpeedChange(BackLeftOmni, -MotorPower(L2_persetage));
-            MotorSpeedChange(BackRightOmni, -MotorPower(L2_persetage));
-            MotorSpeedChange(FrontRightOmni, -MotorPower(L2_persetage));
+            MotorSpeedChange(FrontLeftOmni, -L2_persetage);
+            MotorSpeedChange(BackLeftOmni, -L2_persetage);
+            MotorSpeedChange(BackRightOmni, -L2_persetage);
+            MotorSpeedChange(FrontRightOmni, -L2_persetage);
         }
         void Stop() {
             MotorSpeedChange(FrontLeftOmni, 0);
@@ -246,22 +247,24 @@ void loop() {
     if (R2_val > 0 && L2_val > 0) {
         TestOmni.Stop();
     } else if (R2_val > 0) {
-        TestOmni.R_Turn(R2_val, 100.0);
+        TestOmni.R_Turn(R2_val, 30.0);
+        // Serial.println("R_turn");
     } else if (L2_val > 0) {
-        TestOmni.L_Turn(L2_val, 100.0);
+        TestOmni.L_Turn(L2_val, 30.0);
+        // Serial.println("L_turn");
     } else if (l_x != 0 || l_y != 0) {
-        TestOmni.Shift(l_x, l_y, 100.0);
+        TestOmni.Shift(l_x, l_y, 30.0);
     } else {
         TestOmni.Stop();
     }
 
     TestOmni.SendPacket();
-    Serial.println(l_x);
-    Serial.println(l_y);
-    Serial.println(r_x);
-    Serial.println(r_y);
-    Serial.println(L2_val);
-    Serial.println(btns);
+    // Serial.println(l_x);
+    // Serial.println(l_y);
+    // Serial.println(r_x);
+    // Serial.println(r_y);
+    // Serial.println(L2_val);
+    // Serial.println(btns);
 
     // Serial.println("Sent button+stick");
     delay(1);
