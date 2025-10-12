@@ -19,7 +19,8 @@ const uint8_t DEADZONE_R2_L2         = 40;
 
 const int   SERIAL_BAUDRATE = 115200;
 const int   CAN_BAUDRATE    = 1000E3;
-const char* PS4_BT_ADDRESS  = "e4:65:b8:7e:0f:f2";
+const char* PS4_BT_ADDRESS  = "48:e7:29:a3:b2:26";
+// const char* PS4_BT_ADDRESS  = "ec:94:cb:6f:c9:c6";
 
 //-20 20 の電流値を -16384 16384にmap
 int16_t format_send_data(double x, double in_min, double in_max, int16_t out_min, int16_t out_max) {
@@ -32,8 +33,7 @@ std::pair<int8_t, int8_t> split_data(int16_t formatted_data) {
     int8_t first_data  = (formatted_data >> 8) & 0xFF;
     int8_t second_data = formatted_data & 0xFF;
     return {first_data, second_data};
-}
-;
+};
 class RoboMasMotor {
     private:
         int id;
@@ -98,8 +98,8 @@ class Omnix4 {
             double vector13 = std::cos(radian) * max_speed_percentage * magnitude;
             double vector24 = std::sin(radian) * max_speed_percentage * magnitude;
 
-            Serial.println(vector13);
-            Serial.println(vector24);
+            // Serial.println(vector13);
+            // Serial.println(vector24);
 
             MotorSpeedChange(FrontLeftOmni, vector13);
             MotorSpeedChange(BackLeftOmni, vector24);
@@ -117,7 +117,7 @@ class Omnix4 {
         }
         void L_Turn(uint8_t L2_val, double speed_percentage) {
             double L2_persetage = double(L2_val) / 255.0 * speed_percentage;
-            Serial.println(L2_persetage);
+            // Serial.println(L2_persetage);
 
             MotorSpeedChange(FrontLeftOmni, -L2_persetage);
             MotorSpeedChange(BackLeftOmni, -L2_persetage);
@@ -137,16 +137,6 @@ class Omnix4 {
 };
 
 Omnix4 TestOmni = Omnix4();
-
-// void setup() {
-//   CAN.setPins(RX_PIN, TX_PIN);
-//   CAN.begin(1000E3);
-// }
-
-// void loop() {
-//     TestOmni.Shift(50, 50, 30.0);
-//     TestOmni.SendPacket();
-// }
 
 // デッドゾーン処理（–128…127 の範囲で扱う）
 int8_t DeadZone_int8_t(int16_t value, int ZONE) {
@@ -173,10 +163,18 @@ void setup() {
     }
     volatile uint32_t* pREG_IER = (volatile uint32_t*)0x3ff6b010;
     *pREG_IER &= ~(uint8_t)0x10;
-    Serial.println("Ready");
+    // Serial.println("Ready");
 }
 
 void loop() {
+
+    int packetSize = CAN.parsePacket();
+    Serial.print("packet with id 0x");
+    Serial.print(CAN.packetId(), HEX);
+    while (CAN.available()) {
+        Serial.println(CAN.read());
+    }
+
     if (!PS4.isConnected()) {
         TestOmni.Stop();
         return;
