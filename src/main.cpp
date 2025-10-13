@@ -34,8 +34,7 @@ std::pair<int8_t, int8_t> split_data(int16_t formatted_data) {
     int8_t first_data  = (formatted_data >> 8) & 0xFF;
     int8_t second_data = formatted_data & 0xFF;
     return {first_data, second_data};
-}
-;
+};
 class RoboMasMotor {
     private:
         int id;
@@ -103,8 +102,8 @@ class Omnix4 {
             double vector13 = std::cos(radian) * max_speed_percentage * magnitude;
             double vector24 = std::sin(radian) * max_speed_percentage * magnitude;
 
-            Serial.println(vector13);
-            Serial.println(vector24);
+            // Serial.println(vector13);
+            // Serial.println(vector24);
 
             MotorSpeedChange(FrontLeftOmni, vector13);
             MotorSpeedChange(BackLeftOmni, vector24);
@@ -122,7 +121,7 @@ class Omnix4 {
         }
         void L_Turn(uint8_t L2_val, double speed_percentage) {
             double L2_persetage = double(L2_val) / 255.0 * speed_percentage;
-            Serial.println(L2_persetage);
+            // Serial.println(L2_persetage);
 
             MotorSpeedChange(FrontLeftOmni, -L2_persetage);
             MotorSpeedChange(BackLeftOmni, -L2_persetage);
@@ -157,6 +156,10 @@ uint8_t packButtons(bool circle, bool triangle, bool square, bool cross, bool L1
            (L1 ? (1 << 4) : 0) | (R1 ? (1 << 5) : 0) | (left ? (1 << 6) : 0) | (right ? (1 << 7) : 0);
 }
 
+int16_t unit_data(int8_t upper_data, int8_t lower_data) {
+    return upper_data << 8 | lower_data;
+}
+
 void setup() {
     Serial.begin(SERIAL_BAUDRATE);
     PS4.begin(PS4_BT_ADDRESS);
@@ -168,7 +171,7 @@ void setup() {
     }
     volatile uint32_t* pREG_IER = (volatile uint32_t*)0x3ff6b010;
     *pREG_IER &= ~(uint8_t)0x10;
-    Serial.println("Ready");
+    // Serial.println("Ready");
 }
 
 double input_count{0.0};
@@ -180,6 +183,14 @@ void check_and_count(double& count, double change) {
 }
 
 void loop() {
+
+    int packetSize = CAN.parsePacket();
+    Serial.print("packet with id 0x");
+    Serial.print(CAN.packetId(), HEX);
+    while (CAN.available()) {
+        Serial.println(CAN.read());
+    }
+
     if (!PS4.isConnected()) {
         TestOmni.Stop();
         return;
