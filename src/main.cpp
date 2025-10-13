@@ -20,7 +20,9 @@ const uint8_t DEADZONE_R2_L2         = 40;
 const int   SERIAL_BAUDRATE = 115200;
 const int   CAN_BAUDRATE    = 1000E3;
 const char* PS4_BT_ADDRESS  = "48:e7:29:a3:b2:26";
-// const char* PS4_BT_ADDRESS  = "ec:94:cb:6f:c9:c6";
+
+const double INPUT_COUNT_PER_EXEC{0.01};
+const double INPUT_COUNT_DEFAULT{0.25};
 
 //-20 20 の電流値を -16384 16384にmap
 int16_t format_send_data(double x, double in_min, double in_max, int16_t out_min, int16_t out_max) {
@@ -94,7 +96,7 @@ class Omnix4 {
     public:
         Omnix4() {}
         void SendPacket() { TxBuf.Send(); }
-        void Shift(int x, int y, double max_speed_percentage) {
+        void Shift(int x, int y, double max_speed_percentage, double count) {
             double distance = std::sqrt(x * x + y * y); // 倒し具合
             if (distance == 0) {
                 MotorSpeedChange(FrontLeftOmni, 0);
@@ -116,6 +118,9 @@ class Omnix4 {
             // 角度を求めて45度回転
             double radian = atan2(ny, nx);
             radian -= PI / 4;
+            
+            // countに応じて補正
+            max_speed_percentage *= count;
 
             // 倒し具合を掛けて速度を決定
             double vector13 = std::cos(radian) * max_speed_percentage * magnitude;
@@ -190,6 +195,14 @@ void setup() {
     // Serial.println("Ready");
 }
 
+double input_count{0.0};
+void check_and_count(double& count, double change) {
+    count += change;
+
+    if(count > 1.0) count = 1.0;
+    if(count < 0.0) count = 0.0;
+}
+
 void loop() {
 
     if (!PS4.isConnected()) {
@@ -227,16 +240,21 @@ void loop() {
 
     if (R2_val > 0 && L2_val > 0) {
         TestOmni.Stop();
+        input_count = INPUT_COUNT_DEFAULT;
     } else if (R2_val > 0) {
         TestOmni.R_Turn(R2_val, 30.0);
+        check_and_count(input_count, INPUT_COUNT_PER_EXEC);
         // Serial.println("R_turn");
     } else if (L2_val > 0) {
         TestOmni.L_Turn(L2_val, 30.0);
+        check_and_count(input_count, INPUT_COUNT_PER_EXEC);
         // Serial.println("L_turn");
-    } else if (l_x != 0 || l_y != 0) {
-        TestOmni.Shift(l_x, l_y, 30.0);
+    } else if (l_x != INPUT_COUNT_DEFAULT || l_y != 0) {
+        TestOmni.Shift(l_x, l_y, 30.0, input_count);
+        check_and_count(input_count, INPUT_COUNT_PER_EXEC);
     } else {
         TestOmni.Stop();
+        input_count = INPUT_COUNT_DEFAULT;
     }
 
     TestOmni.SendPacket();
