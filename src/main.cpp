@@ -21,7 +21,8 @@ const int   SERIAL_BAUDRATE = 115200;
 const int   CAN_BAUDRATE    = 1000E3;
 const char* PS4_BT_ADDRESS  = "48:e7:29:a3:b2:26";
 
-const double INPUT_COUNT_PER_EXEC{0.001};
+const double INPUT_COUNT_PER_EXEC{0.01};
+const double INPUT_COUNT_DEFAULT{0.25};
 
 //-20 20 の電流値を -16384 16384にmap
 int16_t format_send_data(double x, double in_min, double in_max, int16_t out_min, int16_t out_max) {
@@ -225,7 +226,7 @@ void loop() {
 
     if (R2_val > 0 && L2_val > 0) {
         TestOmni.Stop();
-        input_count = 0;
+        input_count = INPUT_COUNT_DEFAULT;
     } else if (R2_val > 0) {
         TestOmni.R_Turn(R2_val, 30.0);
         check_and_count(input_count, INPUT_COUNT_PER_EXEC);
@@ -234,12 +235,12 @@ void loop() {
         TestOmni.L_Turn(L2_val, 30.0);
         check_and_count(input_count, INPUT_COUNT_PER_EXEC);
         // Serial.println("L_turn");
-    } else if (l_x != 0 || l_y != 0) {
+    } else if (l_x != INPUT_COUNT_DEFAULT || l_y != 0) {
         TestOmni.Shift(l_x, l_y, 30.0, input_count);
         check_and_count(input_count, INPUT_COUNT_PER_EXEC);
     } else {
         TestOmni.Stop();
-        input_count = 0;
+        input_count = INPUT_COUNT_DEFAULT;
     }
 
     TestOmni.SendPacket();
