@@ -51,6 +51,29 @@ class RoboMasMotor {
             return split_data(format_send_data(20 * proportion, MIN_CURRENT, MAX_CURRENT, MIN_SENDNUM, MAX_SENDNUM));
         }
 };
+// ロボマスから送られるデータ
+// DATA[0] 上位バイトの機械的角度 [1]下位バイトの機械的角度 0-8191 0-360
+// DATA[2] 上位バイトの回転速度　 [3]下位バイトの回転速度　rpm
+// DATA[4] 上位バイトの実際のトルク電流 [5] 下位バイトの実際のトルク電流
+// DATA[6] モータの温度 ℃
+struct MotorData {
+        int16_t angle;
+        int16_t rpm;
+        int16_t torque_current;
+        uint8_t temperature;
+
+        int16_t unit_data(uint8_t upper_data, uint8_t lower_data) { return upper_data << 8 | lower_data; }
+
+        void update(uint8_t upper_angle, uint8_t lower_angle, uint8_t upper_rpm, uint8_t lower_rpm,
+                    uint8_t upper_torque_current, uint8_t lower_torque_current, uint8_t temp) {
+            angle          = unit_data(upper_angle, lower_angle);
+            rpm            = unit_data(upper_rpm, lower_rpm);
+            torque_current = unit_data(upper_torque_current, lower_torque_current);
+            temperature    = temp;
+        }
+};
+
+MotorData motors[4];
 class Omnix4 {
     private:
         RoboMasMotor FrontLeftOmni        = RoboMasMotor(3);
@@ -125,10 +148,11 @@ class Omnix4 {
             MotorSpeedChange(FrontRightOmni, -L2_persetage);
         }
         void Stop() {
-            MotorSpeedChange(FrontLeftOmni, 0);
-            MotorSpeedChange(BackLeftOmni, 0);
-            MotorSpeedChange(BackRightOmni, 0);
-            MotorSpeedChange(FrontRightOmni, 0);
+            double brake_gain = 0.1;
+            MotorSpeedChange(FrontLeftOmni, -motors[2].rpm * brake_gain);
+            MotorSpeedChange(BackLeftOmni, -motors[0].rpm * brake_gain);
+            MotorSpeedChange(BackRightOmni, -motors[1].rpm * brake_gain);
+            MotorSpeedChange(FrontRightOmni, -motors[3].rpm * brake_gain);
         }
         void TestMove(double x) {
             MotorSpeedChange(FrontLeftOmni, x);
@@ -152,10 +176,6 @@ uint8_t packButtons(bool circle, bool triangle, bool square, bool cross, bool L1
            (L1 ? (1 << 4) : 0) | (R1 ? (1 << 5) : 0) | (left ? (1 << 6) : 0) | (right ? (1 << 7) : 0);
 }
 
-int16_t unit_data(int8_t upper_data, int8_t lower_data) {
-    return upper_data << 8 | lower_data;
-}
-
 void setup() {
     Serial.begin(SERIAL_BAUDRATE);
     PS4.begin(PS4_BT_ADDRESS);
@@ -172,15 +192,9 @@ void setup() {
 
 void loop() {
 
-    int packetSize = CAN.parsePacket();
-    Serial.print("packet with id 0x");
-    Serial.print(CAN.packetId(), HEX);
-    while (CAN.available()) {
-        Serial.println(CAN.read());
-    }
-
     if (!PS4.isConnected()) {
         TestOmni.Stop();
+        TestOmni.SendPacket();
         return;
     }
     // 1) スティック値取得（–128…127）
@@ -226,13 +240,33 @@ void loop() {
     }
 
     TestOmni.SendPacket();
-    // Serial.println(l_x);
-    // Serial.println(l_y);
-    // Serial.println(r_x);
-    // Serial.println(r_y);
-    // Serial.println(L2_val);
-    // Serial.println(btns);
 
-    // Serial.println("Sent button+stick");
-    delay(1);
+    delayMicroseconds(200);
+
+    for (int attempt = 0; attempt < 10; attempt++) {
+        int packetSize = CAN.parsePacket();
+        if (packetSize) {
+            int packetId = CAN.packetId();
+
+            if (packetId >= 0x201 && packetId <= 0x204) {
+                int motorIndex = packetId - 0x201;
+
+                uint8_t data[8];
+                int     i = 0;
+                while (CAN.available() && i < 8) {
+                    data[i] = CAN.read();
+                    i++;
+                }
+
+                if (i >= 7) {
+                    motors[motorIndex].update(data[0], data[1], data[2], data[3], data[4], data[5], data[6]);
+                }
+            }
+        } else {
+            break;
+        }
+        delayMicroseconds(50);
+    }
+
+    delay(10);
 }
