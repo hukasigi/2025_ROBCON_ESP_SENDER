@@ -89,9 +89,7 @@ class Omnix4 {
             TxBuf.At(motor.SendBufNum().second) = motor.SendBufByte(speed_percentage).second;
         }
 
-        double MotorPower(double motor_power, bool PS4_circle = PS4.Circle()) {
-            return motor_power * (PS4_circle ? 0.15 : 1.0);
-        }
+        double MotorPower(double motor_power) { return motor_power * (PS4.Circle() ? 0.3 : 1.0); }
 
     public:
         Omnix4() {}
@@ -99,6 +97,7 @@ class Omnix4 {
         void Shift(int x, int y, double max_speed_percentage, double count) {
             double distance = std::sqrt(x * x + y * y); // 倒し具合
             if (distance == 0) {
+                double brake_gain = 1;
                 MotorSpeedChange(FrontLeftOmni, 0);
                 MotorSpeedChange(BackLeftOmni, 0);
                 MotorSpeedChange(BackRightOmni, 0);
@@ -118,7 +117,7 @@ class Omnix4 {
             // 角度を求めて45度回転
             double radian = atan2(ny, nx);
             radian -= PI / 4;
-            
+
             // countに応じて補正
             max_speed_percentage *= count;
 
@@ -129,35 +128,34 @@ class Omnix4 {
             // Serial.println(vector13);
             // Serial.println(vector24);
 
-            MotorSpeedChange(FrontLeftOmni, vector13);
-            MotorSpeedChange(BackLeftOmni, vector24);
-            MotorSpeedChange(BackRightOmni, -vector13);
-            MotorSpeedChange(FrontRightOmni, -vector24);
+            MotorSpeedChange(FrontLeftOmni, MotorPower(vector13));
+            MotorSpeedChange(BackLeftOmni, MotorPower(vector24));
+            MotorSpeedChange(BackRightOmni, -MotorPower(vector13));
+            MotorSpeedChange(FrontRightOmni, -MotorPower(vector24));
         }
 
         void R_Turn(u_int8_t R2_val, double speed_percentage) {
             double R2_persentage = double(R2_val) / 255.0 * speed_percentage;
 
-            MotorSpeedChange(FrontLeftOmni, R2_persentage);
-            MotorSpeedChange(BackLeftOmni, R2_persentage);
-            MotorSpeedChange(BackRightOmni, R2_persentage);
-            MotorSpeedChange(FrontRightOmni, R2_persentage);
+            MotorSpeedChange(FrontLeftOmni, MotorPower(R2_persentage));
+            MotorSpeedChange(BackLeftOmni, MotorPower(R2_persentage));
+            MotorSpeedChange(BackRightOmni, MotorPower(R2_persentage));
+            MotorSpeedChange(FrontRightOmni, MotorPower(R2_persentage));
         }
         void L_Turn(uint8_t L2_val, double speed_percentage) {
             double L2_persetage = double(L2_val) / 255.0 * speed_percentage;
             // Serial.println(L2_persetage);
 
-            MotorSpeedChange(FrontLeftOmni, -L2_persetage);
-            MotorSpeedChange(BackLeftOmni, -L2_persetage);
-            MotorSpeedChange(BackRightOmni, -L2_persetage);
-            MotorSpeedChange(FrontRightOmni, -L2_persetage);
+            MotorSpeedChange(FrontLeftOmni, -MotorPower(L2_persetage));
+            MotorSpeedChange(BackLeftOmni, -MotorPower(L2_persetage));
+            MotorSpeedChange(BackRightOmni, -MotorPower(L2_persetage));
+            MotorSpeedChange(FrontRightOmni, -MotorPower(L2_persetage));
         }
         void Stop() {
-            double brake_gain = 0.1;
-            MotorSpeedChange(FrontLeftOmni, -motors[2].rpm * brake_gain);
-            MotorSpeedChange(BackLeftOmni, -motors[0].rpm * brake_gain);
-            MotorSpeedChange(BackRightOmni, -motors[1].rpm * brake_gain);
-            MotorSpeedChange(FrontRightOmni, -motors[3].rpm * brake_gain);
+            MotorSpeedChange(FrontLeftOmni, 0);
+            MotorSpeedChange(BackLeftOmni, 0);
+            MotorSpeedChange(BackRightOmni, 0);
+            MotorSpeedChange(FrontRightOmni, 0);
         }
         void TestMove(double x) {
             MotorSpeedChange(FrontLeftOmni, x);
@@ -181,6 +179,21 @@ uint8_t packButtons(bool circle, bool triangle, bool square, bool cross, bool L1
            (L1 ? (1 << 4) : 0) | (R1 ? (1 << 5) : 0) | (left ? (1 << 6) : 0) | (right ? (1 << 7) : 0);
 }
 
+struct MaxSpeedChange {
+        double power_turn  = 30.0;
+        double power_shift = 70.0;
+
+        void MotorSpeedChange() {
+            if (PS4.Up()) {
+                power_shift += 5.0;
+                if (power_shift > 100.0) power_shift = 100.0;
+            } else if (PS4.Down()) {
+                power_shift -= 5.0;
+                if (power_shift < 0.0) power_shift = 0.0;
+            }
+        }
+};
+
 void setup() {
     Serial.begin(SERIAL_BAUDRATE);
     PS4.begin(PS4_BT_ADDRESS);
@@ -196,12 +209,13 @@ void setup() {
 }
 
 double input_count{0.0};
-void check_and_count(double& count, double change) {
+void   check_and_count(double& count, double change) {
     count += change;
 
-    if(count > 1.0) count = 1.0;
-    if(count < 0.0) count = 0.0;
+    if (count > 1.0) count = 1.0;
+    if (count < 0.0) count = 0.0;
 }
+MaxSpeedChange Robomas;
 
 void loop() {
 
@@ -238,19 +252,20 @@ void loop() {
 
     CAN.endPacket();
 
+    Robomas.MotorSpeedChange();
     if (R2_val > 0 && L2_val > 0) {
         TestOmni.Stop();
         input_count = INPUT_COUNT_DEFAULT;
     } else if (R2_val > 0) {
-        TestOmni.R_Turn(R2_val, 30.0);
+        TestOmni.R_Turn(R2_val, Robomas.power_turn);
         check_and_count(input_count, INPUT_COUNT_PER_EXEC);
         // Serial.println("R_turn");
     } else if (L2_val > 0) {
-        TestOmni.L_Turn(L2_val, 30.0);
+        TestOmni.L_Turn(L2_val, Robomas.power_turn);
         check_and_count(input_count, INPUT_COUNT_PER_EXEC);
         // Serial.println("L_turn");
-    } else if (l_x != INPUT_COUNT_DEFAULT || l_y != 0) {
-        TestOmni.Shift(l_x, l_y, 30.0, input_count);
+    } else if (l_x != 0 || l_y != 0) {
+        TestOmni.Shift(l_x, l_y, Robomas.power_shift, input_count);
         check_and_count(input_count, INPUT_COUNT_PER_EXEC);
     } else {
         TestOmni.Stop();
