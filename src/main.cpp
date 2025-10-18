@@ -185,11 +185,9 @@ struct MaxSpeedChange {
 
         void MotorSpeedChange() {
             if (PS4.Up()) {
-                power_shift += 5.0;
-                if (power_shift > 100.0) power_shift = 100.0;
+                power_shift = 100.0;
             } else if (PS4.Down()) {
-                power_shift -= 5.0;
-                if (power_shift < 0.0) power_shift = 0.0;
+                power_shift = 70.0;
             }
         }
 };
